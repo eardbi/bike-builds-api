@@ -12,11 +12,6 @@ packages = [{ include = "bike_builds_api" }]
 
 [tool.poetry.dependencies]
 python = "^3.10"
+scrape-api = "^0.0.0"
 rich = "^13.5.2"
 pydantic = "^2.5.0"
-
-
-[[tool.poetry.source]]
-name = "nexus"
-url = "http://10.1.5.124/repository/pypi-axe/simple"
-priority = "supplemental"
