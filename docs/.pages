@@ -1,0 +1,5 @@
+nav:
+  - documentation
+  - User Guide: user_guide
+  - Developer Guide: developer_guide
+  - ...

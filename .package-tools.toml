@@ -1,0 +1,33 @@
+[project]
+repo_url = "https://git.axelera.ai/dev/rd/arch-tools/bike-builds-api"
+docs_url = "http://dev.doc.axelera.ai/rd/arch-tools/bike-builds-api"
+
+[package]
+package_name = "bike-builds-api"
+python_version = "3.10"
+
+[package.repositories.gitlab]
+url = "https://git.axelera.ai/api/v4/projects/0/packages/pypi/"
+username = "gitlab-ci-token"
+
+[package.repositories.nexus]
+url = "http://10.1.5.124/repository/pypi-axe/"
+username = "pypi-axe"
+
+[package.repositories.silverlight]
+url = "http://silverlight-host-0-zrh:4532/"
+username = "gitlab-runner"
+
+[docs]
+landing_page = "user_guide"
+macros_modules = [
+    "mkdocs_macros_lib",
+    "mkdocs_macros_local",
+]
+
+[envs.docs]
+extra_dependencies = [
+    "mkdocs-macros-lib >= 0.1, <= 0.2",
+    "mkdocs-macros-helper >= 0.1, <= 0.2",
+    "-e scripts/mkdocs-macros-local",
+]
