@@ -28,7 +28,6 @@ __all__ = [
     'ScrapeField',
     'ScrapeResult',
     'ScrapeTargetName',
-    'Item',
 ]
 
 # --------------------------------------------------------------------------------------------------
@@ -102,28 +101,6 @@ class _BaseModel(
     extra='forbid',
 ):
     pass
-
-
-class _NonEmptyBaseModel(_BaseModel, abc.ABC):
-    @pydantic.model_validator(mode='after')
-    def validate_non_empty(self):
-        print('---')
-        print(self.model_dump())
-        assert any(
-            value is not None
-            for value in self.model_dump().values()
-        ), "PriceTag must not be empty!"
-        return self
-
-
-class _OnlyOneBaseModel(_BaseModel, abc.ABC):
-    @pydantic.model_validator(mode='after')
-    def validate_only_one(self):
-        assert sum(
-            value is not None
-            for value in self.model_dump().values()
-        ) == 1, "Only one field must be set!"
-        return self
 
 
 class NamedBaseModel(_BaseModel, abc.ABC, ):
@@ -303,10 +280,3 @@ class ScrapeResult(_BaseModel):
         assert info.field_name in [name for name in ScrapeTargetName], \
             f"Field '{info.field_name}' is not a valid scrape result field!"
         return v
-
-
-# --------------------------------------------------------------------------------------------------
-# Inferred Types
-# --------------------------------------------------------------------------------------------------
-
-Item = Part | Manufacturer | Shop
