@@ -20,6 +20,8 @@ from scrape_api import (
 
 __all__ = [
     'ID',
+    'Price',
+    'PriceTag',
     'NamedBaseModel',
     'CollectionName',
     'Shop',
@@ -28,6 +30,7 @@ __all__ = [
     'ScrapeField',
     'ScrapeResult',
     'ScrapeTargetName',
+    'Item',
 ]
 
 # --------------------------------------------------------------------------------------------------
@@ -95,11 +98,7 @@ class ComponentName(str, Enum):
 # Base Models
 # --------------------------------------------------------------------------------------------------
 
-class _BaseModel(
-    pydantic.BaseModel,
-    abc.ABC,
-    extra='forbid',
-):
+class _BaseModel(pydantic.BaseModel, abc.ABC):
     pass
 
 
@@ -129,33 +128,22 @@ class NamedBaseModel(_BaseModel, abc.ABC, ):
             .replace('.', '_')
         )
 
-    @pydantic.field_validator('id')
-    @classmethod
-    def infer_id(
-          cls,
-          v: str,
-          info: pydantic.ValidationInfo,
-    ) -> ID | None:
-        if v is not None:
-            return v
-
-        if 'name' not in info.data:
-            return None
+    @pydantic.model_validator(mode='after')
+    def infer_id(self):
+        if self.id is not None:
+            return self
 
         # Infer ID from name
-        id_from_name = re.sub(
+        self.id = re.sub(
             _NON_ID_CHARACTERS_PATTERN, '',
-            cls.id_from_name(info.data['name'])
+            self.id_from_name(self.name)
         )
 
-        # TODO(schmuck): This is a problem when the name is changed
-        # # Pre-validate ID
-        # if v is not None and v != id_from_name:
-        #     raise ValueError(
-        #         f"ID '{v}' does not match inferred ID '{id_from_name}'"
-        #     )
+        return self
 
-        return id_from_name
+
+class _CollectionBaseModel(NamedBaseModel, abc.ABC):
+    collection: CollectionName
 
 
 # --------------------------------------------------------------------------------------------------
@@ -170,13 +158,10 @@ class Price(_BaseModel):
     currency: str
 
 
-class BasePriceTag(_BaseModel):
+class PriceTag(_BaseModel, abc.ABC):
     price: Price | None = None
     available: bool | None = None
-    rating: Annotated[
-        pydantic.NonNegativeInt | None,
-        pydantic.Field(le=5)
-    ] = None  # TODO(schmuck): Add rating model
+    rating: Rating | None = None  # TODO(schmuck): Add rating model
     discount: bool | None = None
 
 
@@ -185,27 +170,44 @@ class BasePriceTag(_BaseModel):
 
 class Listing(_BaseModel):
     shop_id: ID
+    provider: str
     variables: Annotated[
-        dict[str, Any],
+        dict[str, str],
         pydantic.Field(min_length=1)
     ]
+    price_tag: PriceTag | None = None
 
 
 class PartVariant(NamedBaseModel):
     listings: list[Listing] = []
 
 
-class Part(NamedBaseModel):
+class Part(_CollectionBaseModel):
+    collection: Literal[CollectionName.PARTS] = CollectionName.PARTS
     component: ComponentName
     manufacturer_id: ID
     year: int | None = None
     variants: list[PartVariant] = []
 
+    @pydantic.model_validator(mode='after')
+    def infer_id(self):
+        if self.id is not None:
+            return self
+
+        # Infer ID from name
+        self.id = re.sub(
+            _NON_ID_CHARACTERS_PATTERN, '',
+            f"{self.manufacturer_id}_{self.id_from_name(self.name)}"
+        )
+
+        return self
+
 
 # Manufacturer
 # --------------------------------------------------------------------------------------------------
 
-class Manufacturer(NamedBaseModel):
+class Manufacturer(_CollectionBaseModel):
+    collection: Literal[CollectionName.MANUFACTURERS] = CollectionName.MANUFACTURERS
     url: pydantic.HttpUrl = None
 
 
@@ -253,7 +255,8 @@ class ScraperConfig(_BaseModel):
     search: SearchScraperConfig
 
 
-class Shop(NamedBaseModel):
+class Shop(_CollectionBaseModel):
+    collection: Literal[CollectionName.SHOPS] = CollectionName.SHOPS
     url: pydantic.HttpUrl
     currency: Literal['EUR', 'USD', 'GBP', 'CHF']
     scraper_config: ScraperConfig
@@ -262,14 +265,10 @@ class Shop(NamedBaseModel):
 # Scraper
 # --------------------------------------------------------------------------------------------------
 
-class ScrapeResult(_BaseModel):
+class ScrapeResult(PriceTag):
     url: pydantic.HttpUrl | None = None
     name: str | None = None
     manufacturer: str | None = None
-    price: Price | None = None
-    available: bool | None = None
-    rating: Rating | None = None
-    discount: bool | None = None
 
     @pydantic.field_validator('*')
     def validate_field_types(
@@ -280,3 +279,15 @@ class ScrapeResult(_BaseModel):
         assert info.field_name in [name for name in ScrapeTargetName], \
             f"Field '{info.field_name}' is not a valid scrape result field!"
         return v
+
+
+# --------------------------------------------------------------------------------------------------
+# Inferred Types
+# --------------------------------------------------------------------------------------------------
+
+Item = Annotated[
+    Part | Manufacturer | Shop,
+    pydantic.Field(
+        discriminator='collection',
+    )
+]
