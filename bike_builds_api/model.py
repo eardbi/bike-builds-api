@@ -98,7 +98,10 @@ class ComponentName(str, Enum):
 # Base Models
 # --------------------------------------------------------------------------------------------------
 
-class _BaseModel(pydantic.BaseModel, abc.ABC):
+class _BaseModel(
+    pydantic.BaseModel, abc.ABC,
+    extra='forbid',
+):
     pass
 
 
@@ -158,11 +161,14 @@ class Price(_BaseModel):
     currency: str
 
 
-class PriceTag(_BaseModel, abc.ABC):
+class PriceTag(
+    _BaseModel, abc.ABC,
+    extra='ignore',
+):
     price: Price | None = None
     available: bool | None = None
     rating: Rating | None = None  # TODO(schmuck): Add rating model
-    discount: bool | None = None
+    discount: bool | None = None  # TODO(schmuck): maybe change this to a percentage
 
 
 # Parts
@@ -266,7 +272,7 @@ class Shop(_CollectionBaseModel):
 # --------------------------------------------------------------------------------------------------
 
 class ScrapeResult(PriceTag):
-    url: pydantic.HttpUrl | None = None
+    url: str | None = None  # TODO(schmuck): Maybe rename this to identifier, or directly figure out the variables here?
     name: str | None = None
     manufacturer: str | None = None
 
