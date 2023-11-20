@@ -29,7 +29,6 @@ __all__ = [
     'Part',
     'ScrapeField',
     'ScrapeResult',
-    'ScrapeTargetName',
     'Item',
 ]
 
@@ -60,16 +59,6 @@ class CollectionName(str, Enum):
     PRICES = 'prices'
 
 
-class ScrapeTargetName(str, Enum):
-    URL = 'url'
-    NAME = 'name'
-    MANUFACTURER = 'manufacturer'
-    PRICE = 'price'
-    AVAILABLE = 'available'
-    RATING = 'rating'
-    DISCOUNT = 'discount'
-
-
 class ComponentName(str, Enum):
     FRAME = 'frame'
     FORK = 'fork'
@@ -78,6 +67,7 @@ class ComponentName(str, Enum):
     BOTTOM_BRACKET = 'bottom_bracket'
     WHEEL = 'wheel'
     TIRE = 'tire'
+    TRIGGER = 'trigger'
     HANDLEBAR = 'handlebar'
     STEM = 'stem'
     SEATPOST = 'seatpost'
@@ -91,6 +81,7 @@ class ComponentName(str, Enum):
     PEDAL = 'pedal'
     FENDER = 'fender'
     TOOL = 'tool'
+    HUB = 'hub'
     OTHER = 'other'
 
 
@@ -146,6 +137,8 @@ class NamedBaseModel(_BaseModel, abc.ABC, ):
 
 
 class _CollectionBaseModel(NamedBaseModel, abc.ABC):
+    # TODO(schmuck): should this be removed again?
+    # TODO(schmuck): can collection be made a private field and used in a union discriminator?
     collection: CollectionName
 
 
@@ -165,10 +158,10 @@ class PriceTag(
     _BaseModel, abc.ABC,
     extra='ignore',
 ):
-    price: Price | None = None
+    price: Price | None = None  # TODO(schmuck): is the currency really necessary? it can be inferred from the shop
     available: bool | None = None
     rating: Rating | None = None  # TODO(schmuck): Add rating model
-    discount: bool | None = None  # TODO(schmuck): maybe change this to a percentage
+    discount: bool | None = None
 
 
 # Parts
@@ -185,6 +178,9 @@ class Listing(_BaseModel):
 
 
 class PartVariant(NamedBaseModel):
+    year: int | None = None
+    product_code: str | None = None
+    on_wish_list: bool = False
     listings: list[Listing] = []
 
 
@@ -192,7 +188,6 @@ class Part(_CollectionBaseModel):
     collection: Literal[CollectionName.PARTS] = CollectionName.PARTS
     component: ComponentName
     manufacturer_id: ID
-    year: int | None = None
     variants: list[PartVariant] = []
 
     @pydantic.model_validator(mode='after')
@@ -220,12 +215,36 @@ class Manufacturer(_CollectionBaseModel):
 # Shop
 # --------------------------------------------------------------------------------------------------
 
+
+class ScrapeFields(_BaseModel, validate_default=True):
+    part: ScrapeField | None = None
+    variant: ScrapeField | None = None
+    name: ScrapeField | None = None
+    manufacturer: ScrapeField | None = None
+    price: ScrapeField | None = None
+    available: ScrapeField | None = None
+    rating: ScrapeField | None = None
+    discount: ScrapeField | None = None
+
+    @pydantic.model_validator(mode='after')
+    def validate_at_least_one_target(
+          self
+    ):
+        assert any(
+            getattr(self, field) is not None
+            for field in self.model_fields
+        ), "At least one scrape target must be specified!"
+
+        return self
+
+
 class PageScraperConfig(_BaseModel):
+    _URL_VARIABLES: ClassVar = ('part', 'variant')
+
     # TODO(schmuck): add an optional index here which should also be available all the way to the endpoint to not
     #  waste bandwidth
     url_extra: str
-    variables: list[str] = []
-    fields: dict[ScrapeTargetName, ScrapeField]
+    fields: ScrapeFields | None = None
 
     @pydantic.field_validator('url_extra')
     @classmethod
@@ -234,25 +253,18 @@ class PageScraperConfig(_BaseModel):
           v: str,
           info: pydantic.ValidationInfo
     ):
-        if 'variables' in info.data:
-            for match in re.findall(r'{(.*?)}', v):
-                assert match in info.data['variables'], \
-                    f"Variable '{match}' not defined in 'variables'!"
+        results = re.findall(r'{(.*?)}', v)
+        assert results, f"URL extra '{v}' does not contain any variables!"
+
+        for match in results:
+            assert match in cls._URL_VARIABLES, \
+                f"URL extra '{v}' contains invalid variable '{match}'!"
+
         return v
 
 
 class SearchScraperConfig(PageScraperConfig):
-    variables: list[str] = ['query']
-
-    @pydantic.field_validator('variables')
-    @classmethod
-    def validate_variables(
-          cls,
-          v: list[str],
-    ):
-        assert v == ['query'], \
-            f"Variables '{v}' must be omitted or contain only 'query'!"
-        return v
+    _URL_VARIABLES: ClassVar = ('query',)
 
 
 class ScraperConfig(_BaseModel):
@@ -264,6 +276,8 @@ class ScraperConfig(_BaseModel):
 class Shop(_CollectionBaseModel):
     collection: Literal[CollectionName.SHOPS] = CollectionName.SHOPS
     url: pydantic.HttpUrl
+    mwst: float | None = None  # TODO(schmuck): make this required as soon as all shops have it
+    shipping_cost: float | None = None  # same as above
     currency: Literal['EUR', 'USD', 'GBP', 'CHF']
     scraper_config: ScraperConfig
 
@@ -271,20 +285,11 @@ class Shop(_CollectionBaseModel):
 # Scraper
 # --------------------------------------------------------------------------------------------------
 
-class ScrapeResult(PriceTag):
-    url: str | None = None  # TODO(schmuck): Maybe rename this to identifier, or directly figure out the variables here?
+class ScrapeResult(PriceTag, validate_default=True):
     name: str | None = None
     manufacturer: str | None = None
-
-    @pydantic.field_validator('*')
-    def validate_field_types(
-          cls,
-          v: Any,
-          info: pydantic.ValidationInfo
-    ):
-        assert info.field_name in [name for name in ScrapeTargetName], \
-            f"Field '{info.field_name}' is not a valid scrape result field!"
-        return v
+    part: str | None = None
+    variant: str | None = None
 
 
 # --------------------------------------------------------------------------------------------------
@@ -297,3 +302,10 @@ Item = Annotated[
         discriminator='collection',
     )
 ]
+
+# --------------------------------------------------------------------------------------------------
+# Compile Time Assertions
+# --------------------------------------------------------------------------------------------------
+
+assert set(ScrapeFields.model_fields) == set(ScrapeResult.model_fields), \
+    "Scrape fields must match the scrape result fields!"
