@@ -24,13 +24,67 @@ __all__ = [
     'PriceTag',
     'NamedBaseModel',
     'CollectionName',
+    'ComponentID',
     'Shop',
+    'Listing',
     'Manufacturer',
+    'Variant',
     'Part',
     'ScrapeField',
+    'PageScrapeConfig',
     'ScrapeResult',
+    'Variables',
     'Item',
+    'COMPONENT_NAME_MAP',
 ]
+
+
+# --------------------------------------------------------------------------------------------------
+# Enums
+# --------------------------------------------------------------------------------------------------
+
+class Currency(str, Enum):
+    EUR = 'EUR'
+    USD = 'USD'
+    GBP = 'GBP'
+    CHF = 'CHF'
+
+
+class CollectionName(str, Enum):
+    PARTS = 'parts'
+    MANUFACTURERS = 'manufacturers'
+    SHOPS = 'shops'
+    PRICES = 'prices'
+
+
+class ComponentID(str, Enum):
+    BOTTOM_BRACKET = 'bottom_bracket'
+    BRAKE = 'brake'
+    CASSETTE = 'cassette'
+    CHAIN = 'chain'
+    CHAINRING = 'chainring'
+    CRANKSET = 'crankset'
+    DERAILLEUR = 'derailleur'
+    FENDER = 'fender'
+    FORK = 'fork'
+    FRAME = 'frame'
+    HANDLEBAR = 'handlebar'
+    HEADSET = 'headset'
+    HUB = 'hub'
+    PEDAL = 'pedal'
+    RIM = 'rim'
+    SADDLE = 'saddle'
+    SEATPOST = 'seatpost'
+    SHOCK = 'shock'
+    STEM = 'stem'
+    TIRE = 'tire'
+    TOOL = 'tool'
+    TRIGGER = 'trigger'
+    WHEEL = 'wheel'
+
+    SPARE_PARTS = 'spare_parts'
+    OTHER = 'other'
+
 
 # --------------------------------------------------------------------------------------------------
 # Constants
@@ -39,6 +93,35 @@ __all__ = [
 _ID_CHARACTERS = r'a-z0-9_'
 _ID_PATTERN = rf'^[{_ID_CHARACTERS}]+$'
 _NON_ID_CHARACTERS_PATTERN = rf'[^{_ID_CHARACTERS}]'
+
+COMPONENT_NAME_MAP = {
+    ComponentID.FRAME:          'Frame',
+    ComponentID.FORK:           'Fork',
+    ComponentID.HEADSET:        'Headset',
+    ComponentID.SHOCK:          'Shock',
+    ComponentID.BOTTOM_BRACKET: 'Bottom Bracket',
+    ComponentID.WHEEL:          'Wheel',
+    ComponentID.TIRE:           'Tire',
+    ComponentID.TRIGGER:        'Trigger',
+    ComponentID.HANDLEBAR:      'Handlebar',
+    ComponentID.STEM:           'Stem',
+    ComponentID.SEATPOST:       'Seatpost',
+    ComponentID.SADDLE:         'Saddle',
+    ComponentID.CRANKSET:       'Crankset',
+    ComponentID.CHAINRING:      'Chainring',
+    ComponentID.CHAIN:          'Chain',
+    ComponentID.CASSETTE:       'Cassette',
+    ComponentID.DERAILLEUR:     'Derailleur',
+    ComponentID.BRAKE:          'Brake',
+    ComponentID.PEDAL:          'Pedal',
+    ComponentID.FENDER:         'Fender',
+    ComponentID.TOOL:           'Tool',
+    ComponentID.HUB:            'Hub',
+    ComponentID.RIM:            'Rim',
+
+    ComponentID.SPARE_PARTS:    'Spare Parts',
+    ComponentID.OTHER:          'Other',
+}
 
 # --------------------------------------------------------------------------------------------------
 # Types
@@ -49,54 +132,18 @@ Rating = Annotated[pydantic.NonNegativeInt, pydantic.Field(le=5)]
 
 
 # --------------------------------------------------------------------------------------------------
-# Enums
-# --------------------------------------------------------------------------------------------------
-
-class CollectionName(str, Enum):
-    PARTS = 'parts'
-    MANUFACTURERS = 'manufacturers'
-    SHOPS = 'shops'
-    PRICES = 'prices'
-
-
-class ComponentName(str, Enum):
-    FRAME = 'frame'
-    FORK = 'fork'
-    HEADSET = 'headset'
-    SHOCK = 'shock'
-    BOTTOM_BRACKET = 'bottom_bracket'
-    WHEEL = 'wheel'
-    TIRE = 'tire'
-    TRIGGER = 'trigger'
-    HANDLEBAR = 'handlebar'
-    STEM = 'stem'
-    SEATPOST = 'seatpost'
-    SADDLE = 'saddle'
-    CRANKSET = 'crankset'
-    CHAINRING = 'chainring'
-    CHAIN = 'chain'
-    CASSETTE = 'cassette'
-    DERAILLEUR = 'derailleur'
-    BRAKE = 'brake'
-    PEDAL = 'pedal'
-    FENDER = 'fender'
-    TOOL = 'tool'
-    HUB = 'hub'
-    OTHER = 'other'
-
-
-# --------------------------------------------------------------------------------------------------
 # Base Models
 # --------------------------------------------------------------------------------------------------
 
 class _BaseModel(
     pydantic.BaseModel, abc.ABC,
     extra='forbid',
+    validate_assignment=True,
 ):
     pass
 
 
-class NamedBaseModel(_BaseModel, abc.ABC, ):
+class NamedBaseModel(_BaseModel, abc.ABC):
     name: Annotated[
         str,
         pydantic.Field(
@@ -136,10 +183,11 @@ class NamedBaseModel(_BaseModel, abc.ABC, ):
         return self
 
 
-class _CollectionBaseModel(NamedBaseModel, abc.ABC):
-    # TODO(schmuck): should this be removed again?
-    # TODO(schmuck): can collection be made a private field and used in a union discriminator?
-    collection: CollectionName
+# class CollectionBaseModel(NamedBaseModel, abc.ABC):
+#     _collection: CollectionName
+#     # TODO(schmuck): should this be removed again?
+#     # TODO(schmuck): can collection be made a private field and used in a union discriminator?
+#     collection: CollectionName
 
 
 # --------------------------------------------------------------------------------------------------
@@ -159,36 +207,50 @@ class PriceTag(
     extra='ignore',
 ):
     price: Price | None = None  # TODO(schmuck): is the currency really necessary? it can be inferred from the shop
+    discount: bool | None = None
     available: bool | None = None
     rating: Rating | None = None  # TODO(schmuck): Add rating model
-    discount: bool | None = None
 
 
 # Parts
 # --------------------------------------------------------------------------------------------------
 
+# TODO(schmuck): do some renaming here, part/variant/variables is too generic
+class Variables(_BaseModel):
+    part: str
+    # variant: str | None = None  # TODO(schmuck): What is this actually gonna be?
+
+
 class Listing(_BaseModel):
-    shop_id: ID
-    provider: str
-    variables: Annotated[
-        dict[str, str],
-        pydantic.Field(min_length=1)
-    ]
+    url: pydantic.HttpUrl | None = None  # TODO(schmuck): should this be required?
+
+    name: str | None = None
+    manufacturer: str | None = None
+
     price_tag: PriceTag | None = None
 
+    # scrape_provider: str
+    variables: Variables
+    # url: pydantic.HttpUrl
 
-class PartVariant(NamedBaseModel):
+
+class Variant(NamedBaseModel):
     year: int | None = None
     product_code: str | None = None
     on_wish_list: bool = False
-    listings: list[Listing] = []
+
+    listings: dict[ID, Listing] = None
 
 
-class Part(_CollectionBaseModel):
-    collection: Literal[CollectionName.PARTS] = CollectionName.PARTS
-    component: ComponentName
+class Part(NamedBaseModel):
+    _collection = CollectionName.PARTS
+
+    # collection: Literal[CollectionName.PARTS] = CollectionName.PARTS
+
+    component: ComponentID
     manufacturer_id: ID
-    variants: list[PartVariant] = []
+
+    variants: list[Variant] = []
 
     @pydantic.model_validator(mode='after')
     def infer_id(self):
@@ -207,20 +269,20 @@ class Part(_CollectionBaseModel):
 # Manufacturer
 # --------------------------------------------------------------------------------------------------
 
-class Manufacturer(_CollectionBaseModel):
-    collection: Literal[CollectionName.MANUFACTURERS] = CollectionName.MANUFACTURERS
+class Manufacturer(NamedBaseModel):
+    _collection = CollectionName.MANUFACTURERS
+
+    # collection: Literal[CollectionName.MANUFACTURERS] = CollectionName.MANUFACTURERS
     url: pydantic.HttpUrl = None
 
 
 # Shop
 # --------------------------------------------------------------------------------------------------
 
-
-class ScrapeFields(_BaseModel, validate_default=True):
-    part: ScrapeField | None = None
-    variant: ScrapeField | None = None
+class ScrapeFields(_BaseModel, abc.ABC):
     name: ScrapeField | None = None
     manufacturer: ScrapeField | None = None
+
     price: ScrapeField | None = None
     available: ScrapeField | None = None
     rating: ScrapeField | None = None
@@ -238,13 +300,23 @@ class ScrapeFields(_BaseModel, validate_default=True):
         return self
 
 
-class PageScraperConfig(_BaseModel):
-    _URL_VARIABLES: ClassVar = ('part', 'variant')
+class PartScrapeFields(ScrapeFields):
+    price: ScrapeField
+
+    # variant: ScrapeField | None = None
+
+
+class SearchScrapeFields(ScrapeFields):
+    part: ScrapeField
+
+
+class PageScrapeConfig(_BaseModel, abc.ABC):
+    _URL_VARIABLES: ClassVar
 
     # TODO(schmuck): add an optional index here which should also be available all the way to the endpoint to not
     #  waste bandwidth
     url_extra: str
-    fields: ScrapeFields | None = None
+    fields: ScrapeFields
 
     @pydantic.field_validator('url_extra')
     @classmethod
@@ -263,49 +335,71 @@ class PageScraperConfig(_BaseModel):
         return v
 
 
-class SearchScraperConfig(PageScraperConfig):
+class PartScrapeConfig(PageScrapeConfig):
+    _URL_VARIABLES: ClassVar = ('part', 'variant')
+
+    fields: PartScrapeFields
+
+
+class SearchScrapeConfig(PageScrapeConfig):
     _URL_VARIABLES: ClassVar = ('query',)
+
+    fields: SearchScrapeFields
+
+
+# TODO(schmuck): all the parts and variants is a bit confusing, consider renaming
+
+class PartScrapeConfigs(_BaseModel):
+    part: PartScrapeConfig
+    # variant: PartScrapeConfig | None = None
 
 
 class ScraperConfig(_BaseModel):
     mode: Literal['browser', 'headless']
-    part: dict[str, PageScraperConfig]
-    search: SearchScraperConfig
+    part: PartScrapeConfigs
+    search: SearchScrapeConfig
 
 
-class Shop(_CollectionBaseModel):
-    collection: Literal[CollectionName.SHOPS] = CollectionName.SHOPS
+class Shop(NamedBaseModel):
+    # TODO(schmuck): This can move down to the backend core base
+    _collection = CollectionName.SHOPS
+
+    # collection: Literal[CollectionName.SHOPS] = CollectionName.SHOPS
+
     url: pydantic.HttpUrl
+    scraper_config: ScraperConfig
+
+    currency: Currency
     mwst: float | None = None  # TODO(schmuck): make this required as soon as all shops have it
     shipping_cost: float | None = None  # same as above
-    currency: Literal['EUR', 'USD', 'GBP', 'CHF']
-    scraper_config: ScraperConfig
 
 
 # Scraper
 # --------------------------------------------------------------------------------------------------
 
-class ScrapeResult(PriceTag, validate_default=True):
+class ScrapeResult(_BaseModel):
     name: str | None = None
     manufacturer: str | None = None
+
+    price: float | None = None
+    discount: bool | None = None
+    available: bool | None = None
+    rating: Rating | None = None
+
     part: str | None = None
-    variant: str | None = None
+    # variant: str | None = None
 
 
 # --------------------------------------------------------------------------------------------------
 # Inferred Types
 # --------------------------------------------------------------------------------------------------
 
-Item = Annotated[
-    Part | Manufacturer | Shop,
-    pydantic.Field(
-        discriminator='collection',
-    )
-]
+# TODO(schmuck): don't use discriminated unions
+Item = Part | Manufacturer | Shop
 
-# --------------------------------------------------------------------------------------------------
-# Compile Time Assertions
-# --------------------------------------------------------------------------------------------------
-
-assert set(ScrapeFields.model_fields) == set(ScrapeResult.model_fields), \
-    "Scrape fields must match the scrape result fields!"
+# # --------------------------------------------------------------------------------------------------
+# # Compile Time Assertions
+# # --------------------------------------------------------------------------------------------------
+#
+# assert set(SearchScrapeFields.model_fields) == set(ScrapeResult.model_fields), \
+#     "Scrape fields must match the scrape result fields!"
