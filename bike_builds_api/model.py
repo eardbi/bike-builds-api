@@ -30,6 +30,9 @@ __all__ = [
     'ComponentID',
     'Shop',
     'Listing',
+    'SearchResult',
+    'PartResult',
+    # 'BaseResult',
     'Manufacturer',
     'Variant',
     'Part',
@@ -204,6 +207,15 @@ class NamedBaseModel(_BaseModel, abc.ABC):
 # Models
 # --------------------------------------------------------------------------------------------------
 
+# Common
+# --------------------------------------------------------------------------------------------------
+
+# TODO(schmuck): do some renaming here, part/variant/variables is too generic
+class Variables(_BaseModel):
+    part: str
+    # variant: str | None = None  # TODO(schmuck): What is this actually gonna be?
+
+
 # Price
 # --------------------------------------------------------------------------------------------------
 
@@ -216,7 +228,7 @@ class PriceTag(
     _BaseModel, abc.ABC,
     extra='ignore',
 ):
-    price: Price | None = None  # TODO(schmuck): this should be necessary
+    price: Price | None = None
     discount: bool | None = None
     available: bool | None = None
     rating: Rating | None = None  # TODO(schmuck): Add rating model
@@ -232,30 +244,53 @@ class ProductPricing(_BaseModel):
     price_tag: PriceTag
 
 
-# Parts
+# Scraper
 # --------------------------------------------------------------------------------------------------
 
-# TODO(schmuck): do some renaming here, part/variant/variables is too generic
-class Variables(_BaseModel):
-    part: str
-    # variant: str | None = None  # TODO(schmuck): What is this actually gonna be?
+class ScrapeResult(_BaseModel):
+    name: str | None = None
+    manufacturer: str | None = None
+
+    price: float | None = None
+    discount: bool | None = None
+    available: bool | None = None
+    rating: Rating | None = None
+
+    part: str | None = None
+    # variant: str | None = None
 
 
-class Listing(_BaseModel):
-    last_modified: Annotated[
+# TODO(schmuck): Make private?
+class BaseResult(_BaseModel, abc.ABC):
+    last_updated: Annotated[
         datetime.datetime,
         pydantic.Field(default_factory=datetime.datetime.utcnow)
     ]
 
-    url: URL | None = None  # TODO(schmuck): should this be required?
-
-    name: str | None = None
+    name: str
     manufacturer: str | None = None
 
     price_tag: PriceTag
 
     # scrape_provider: str
-    variables: Variables | None = None  # TODO(schmuck): is this solvable differently?
+    variables: Variables | None = None
+
+
+class SearchResult(BaseResult):
+    url: URL
+    variables: Variables
+
+
+class PartResult(BaseResult):
+    pass
+
+
+# Parts
+# --------------------------------------------------------------------------------------------------
+
+class Listing(BaseResult):
+    url: URL
+    variables: Variables
 
 
 class Variant(NamedBaseModel):
@@ -304,7 +339,7 @@ class Manufacturer(NamedBaseModel):
 # --------------------------------------------------------------------------------------------------
 
 class ScrapeFields(_BaseModel, abc.ABC):
-    name: ScrapeField | None = None
+    name: ScrapeField
     manufacturer: ScrapeField | None = None
 
     price: ScrapeField | None = None
@@ -374,8 +409,8 @@ class SearchScrapeConfig(PageScrapeConfig):
 # TODO(schmuck): all the parts and variants is a bit confusing, consider renaming
 
 class PartScrapeConfigs(_BaseModel):
-    part: PartScrapeConfig
-    # variant: PartScrapeConfig | None = None
+    single: PartScrapeConfig
+    grouped: PartScrapeConfig | None = None
 
 
 class ScraperConfig(_BaseModel):
@@ -398,22 +433,6 @@ class Shop(NamedBaseModel):
     shipping_cost: float | None = None  # same as above
 
 
-# Scraper
-# --------------------------------------------------------------------------------------------------
-
-class ScrapeResult(_BaseModel):
-    name: str | None = None
-    manufacturer: str | None = None
-
-    price: float | None = None
-    discount: bool | None = None
-    available: bool | None = None
-    rating: Rating | None = None
-
-    part: str | None = None
-    # variant: str | None = None
-
-
 # --------------------------------------------------------------------------------------------------
 # Inferred Types
 # --------------------------------------------------------------------------------------------------
@@ -421,9 +440,12 @@ class ScrapeResult(_BaseModel):
 # TODO(schmuck): don't use discriminated unions
 Item = Part | Manufacturer | Shop
 
-# # --------------------------------------------------------------------------------------------------
-# # Compile Time Assertions
-# # --------------------------------------------------------------------------------------------------
-#
-# assert set(SearchScrapeFields.model_fields) == set(ScrapeResult.model_fields), \
-#     "Scrape fields must match the scrape result fields!"
+# --------------------------------------------------------------------------------------------------
+# Compile Time Assertions
+# --------------------------------------------------------------------------------------------------
+
+# Make sure that SearchScrapeFields and PartScrapeFields are a subset of ScrapeResult
+assert set(SearchScrapeFields.model_fields).issubset(set(ScrapeResult.model_fields)), \
+    "Search scrape fields must be a subset of scrape result fields!"
+assert set(PartScrapeFields.model_fields).issubset(set(ScrapeResult.model_fields)), \
+    "Part scrape fields must be a subset of scrape result fields!"
