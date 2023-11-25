@@ -4,11 +4,13 @@
 
 from typing import *
 from typing_extensions import Self
+import datetime
 import abc
 import re
 from enum import Enum
 
 import pydantic
+import pydantic.functional_serializers
 
 from scrape_api import (
     ScrapeField,
@@ -22,6 +24,7 @@ __all__ = [
     'ID',
     'Price',
     'PriceTag',
+    'ProductPricing',
     'NamedBaseModel',
     'CollectionName',
     'ComponentID',
@@ -129,6 +132,13 @@ COMPONENT_NAME_MAP = {
 
 ID = Annotated[str, pydantic.StringConstraints(pattern=_ID_PATTERN)]
 Rating = Annotated[pydantic.NonNegativeInt, pydantic.Field(le=5)]
+URL = Annotated[
+    pydantic.HttpUrl,
+    pydantic.functional_serializers.PlainSerializer(
+        lambda x: x.unicode_string(),
+        str
+    )
+]
 
 
 # --------------------------------------------------------------------------------------------------
@@ -206,10 +216,20 @@ class PriceTag(
     _BaseModel, abc.ABC,
     extra='ignore',
 ):
-    price: Price | None = None  # TODO(schmuck): is the currency really necessary? it can be inferred from the shop
+    price: Price | None = None  # TODO(schmuck): this should be necessary
     discount: bool | None = None
     available: bool | None = None
     rating: Rating | None = None  # TODO(schmuck): Add rating model
+
+
+class ProductPricing(_BaseModel):
+    timestamp: datetime.date
+
+    part_id: ID
+    variant_id: ID
+    shop_id: ID
+
+    price_tag: PriceTag
 
 
 # Parts
@@ -222,16 +242,20 @@ class Variables(_BaseModel):
 
 
 class Listing(_BaseModel):
-    url: pydantic.HttpUrl | None = None  # TODO(schmuck): should this be required?
+    last_modified: Annotated[
+        datetime.datetime,
+        pydantic.Field(default_factory=datetime.datetime.utcnow)
+    ]
+
+    url: URL | None = None  # TODO(schmuck): should this be required?
 
     name: str | None = None
     manufacturer: str | None = None
 
-    price_tag: PriceTag | None = None
+    price_tag: PriceTag
 
     # scrape_provider: str
-    variables: Variables
-    # url: pydantic.HttpUrl
+    variables: Variables | None = None  # TODO(schmuck): is this solvable differently?
 
 
 class Variant(NamedBaseModel):
@@ -273,7 +297,7 @@ class Manufacturer(NamedBaseModel):
     _collection = CollectionName.MANUFACTURERS
 
     # collection: Literal[CollectionName.MANUFACTURERS] = CollectionName.MANUFACTURERS
-    url: pydantic.HttpUrl = None
+    url: URL = None
 
 
 # Shop
@@ -366,7 +390,7 @@ class Shop(NamedBaseModel):
 
     # collection: Literal[CollectionName.SHOPS] = CollectionName.SHOPS
 
-    url: pydantic.HttpUrl
+    url: URL
     scraper_config: ScraperConfig
 
     currency: Currency
